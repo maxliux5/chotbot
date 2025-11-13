@@ -5,11 +5,15 @@ description = "A Python-based chatbot with RAG and MCP support"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "deepseek-ai>=0.0.1",
     "langchain>=1.0.5",
     "langchain-community>=0.4.1",
     "numpy>=2.3.4",
     "openai>=2.7.2",
+    "pdfminer-six>=20251107",
     "python-dotenv>=1.2.1",
+    "reportlab>=4.4.4",
+    "sentence-transformers>=5.1.2",
 ]
 
 [tool.setuptools]
