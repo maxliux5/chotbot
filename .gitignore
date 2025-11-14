@@ -39,3 +39,4 @@ coverage.xml
 
 # Debug
 *.pyo
+node_modules/

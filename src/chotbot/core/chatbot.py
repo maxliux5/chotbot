@@ -81,6 +81,77 @@ class Chatbot:
             # Use MCP for context-aware generation
             return self.mcp_processor.interact(user_input, system_prompt=system_prompt)
     
+    def chat_stream(self, user_input: str, use_rag: bool = True, system_prompt: str = None):
+        """
+        Process a user input and generate a streaming response.
+        
+        Args:
+            user_input (str): User's input message
+            use_rag (bool): Whether to use RAG for retrieval
+            system_prompt (str): Optional system prompt
+            
+        Yields:
+            str: Chunks of the generated response
+        """
+        # 意图识别
+        intent_result = self.intent_recognizer.recognize(user_input)
+        intent = intent_result['intent']
+        slots = intent_result['slots']
+        
+        # 可以根据意图和槽位执行不同的操作
+        # 目前只是打印识别结果
+        print(f"意图识别结果:")
+        print(f"  意图: {intent}")
+        print(f"  槽位: {slots}")
+        print(f"  置信度: {intent_result['confidence']:.2f}")
+        
+        # 尝试使用工具调用
+        response = None
+        
+        if intent == "查询天气":
+            response = self._handle_weather_query(slots)
+        elif intent == "查询股票":
+            response = self._handle_stock_query(slots)
+        elif intent == "查询基金":
+            response = self._handle_fund_query(slots)
+        
+        # 如果工具调用成功，直接返回结果
+        if response:
+            # Add to MCP context
+            self.mcp_processor.context_manager.add_message("user", user_input)
+            self.mcp_processor.context_manager.add_message("assistant", response)
+            yield response
+            return
+        
+        # 继续原有逻辑
+        if use_rag:
+            # For streaming, use the LLM client directly with retrieved context
+            context_docs = self.rag_manager.retrieve_context(user_input)
+            context = "\n".join([doc.page_content for doc in context_docs])
+            
+            # Create messages
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": f"上下文：{context}\n\n问题：{user_input}"})
+            
+            # Get streaming response
+            for chunk in self.llm_client.generate_stream(messages):
+                yield chunk
+            
+            # Combine response for context
+            full_response = ""
+            for chunk in self.llm_client.generate(messages):
+                full_response += chunk
+            
+            # Add to MCP context
+            self.mcp_processor.context_manager.add_message("user", user_input)
+            self.mcp_processor.context_manager.add_message("assistant", full_response)
+        else:
+            # Use MCP for context-aware streaming generation
+            response = self.mcp_processor.interact(user_input, system_prompt=system_prompt)
+            yield response
+    
     def _handle_weather_query(self, slots: dict) -> str:
         """
         处理天气查询意图

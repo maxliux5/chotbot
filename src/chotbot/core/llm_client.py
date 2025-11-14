@@ -30,3 +30,28 @@ class LLMClient:
             return response.choices[0].message.content.strip()
         except Exception as e:
             raise RuntimeError(f"LLM API error: {str(e)}")
+    
+    def generate_stream(self, messages: list, **kwargs):
+        """
+        Generate a streaming response from the LLM.
+        
+        Args:
+            messages (list): List of messages in OpenAI format
+            **kwargs: Additional parameters for the API call
+            
+        Yields:
+            str: Chunks of the generated response
+        """
+        try:
+            stream = self.client.chat.completions.create(
+                model=Config.MODEL_NAME,
+                messages=messages,
+                temperature=Config.TEMPERATURE,
+                stream=True,
+                **kwargs
+            )
+            for chunk in stream:
+                if chunk.choices[0].delta.content is not None:
+                    yield chunk.choices[0].delta.content
+        except Exception as e:
+            raise RuntimeError(f"LLM API error: {str(e)}")
