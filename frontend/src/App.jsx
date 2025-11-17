@@ -18,12 +18,16 @@ function App() {
   const handleSend = async () => {
     if (!inputValue.trim() || isLoading) return;
 
+    console.log('=== 前端调试信息 ===');
+    console.log('用户输入:', inputValue.trim());
+
     const userMessage = { role: 'user', content: inputValue.trim() };
     setMessages(prev => [...prev, userMessage]);
     setInputValue('');
     setIsLoading(true);
 
     try {
+      console.log('正在发送请求到后端...');
       const response = await fetch('http://localhost:5001/api/chat', {
         method: 'POST',
         headers: {
@@ -32,25 +36,34 @@ function App() {
         body: JSON.stringify({ message: userMessage.content }),
       });
 
+      console.log('后端响应状态:', response.status);
+      console.log('后端响应头:', response.headers);
+
       if (!response.ok) {
-        throw new Error('Network response was not ok');
+        const errorText = await response.text();
+        console.error('后端错误响应:', errorText);
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder('utf-8');
-      let assistantMessage = { role: 'assistant', content: '' };
+      const data = await response.json();
+      console.log('后端返回数据:', data);
+      
+      const assistantMessage = { role: 'assistant', content: data.response };
       setMessages(prev => [...prev, assistantMessage]);
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value);
-        assistantMessage.content += chunk;
-        setMessages(prev => [...prev.slice(0, -1), { ...assistantMessage }]);
-      }
     } catch (error) {
-      console.error('Error:', error);
-      const errorMessage = { role: 'assistant', content: '抱歉，发生了错误，请稍后重试。' };
+      console.error('=== 前端错误 ===');
+      console.error('错误详情:', error);
+      console.error('错误堆栈:', error.stack);
+      
+      const errorMessage = { 
+        role: 'assistant', 
+        content: `抱歉，发生了错误：${error.message}
+
+调试信息：
+- 请确保后端服务运行在 http://localhost:5001
+- 检查浏览器控制台是否有CORS错误
+- 检查后端日志文件 backend.log` 
+      };
       setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
