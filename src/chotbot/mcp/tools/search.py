@@ -5,7 +5,7 @@ class SearchTool:
     A tool for performing deep searches using DuckDuckGo.
     """
 
-    def search(self, query: str, max_results: int = 3) -> dict:
+    def run(self, query: str, max_results: int = 3) -> dict:
         """
         Performs a search using DuckDuckGo and returns the results.
 

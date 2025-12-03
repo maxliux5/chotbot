@@ -3,6 +3,7 @@ from chotbot.rag.rag_manager import RAGManager
 from chotbot.mcp.processor import MCPProcessor
 from chotbot.intent.intent_recognizer import IntentRecognizer
 from chotbot.mcp.tools.tool_manager import ToolManager
+from chotbot.core.react_agent import ReActAgent
 
 class Chatbot:
     """
@@ -18,6 +19,9 @@ class Chatbot:
         
         # 初始化工具管理器
         self.tool_manager = ToolManager()
+    
+        # 初始化 ReAct 代理
+        self.react_agent = ReActAgent(self.llm_client, self.tool_manager)
     
     def add_documents(self, documents: list):
         """
@@ -41,28 +45,28 @@ class Chatbot:
             str: Generated response
         """
         # 意图识别
-        intent_result = self.intent_recognizer.recognize(user_input)
-        intent = intent_result['intent']
-        slots = intent_result['slots']
+        # intent_result = self.intent_recognizer.recognize(user_input)
+        # intent = intent_result['intent']
+        # slots = intent_result['slots']
         
-        # 可以根据意图和槽位执行不同的操作
-        # 目前只是打印识别结果
-        print(f"意图识别结果:")
-        print(f"  意图: {intent}")
-        print(f"  槽位: {slots}")
-        print(f"  置信度: {intent_result['confidence']:.2f}")
+        # # 可以根据意图和槽位执行不同的操作
+        # # 目前只是打印识别结果
+        # print(f"意图识别结果:")
+        # print(f"  意图: {intent}")
+        # print(f"  槽位: {slots}")
+        # print(f"  置信度: {intent_result['confidence']:.2f}")
         
         # 尝试使用工具调用
         response = None
         
-        if intent == "查询天气":
-            response = self._handle_weather_query(slots)
-        elif intent == "查询股票":
-            response = self._handle_stock_query(slots)
-        elif intent == "查询基金":
-            response = self._handle_fund_query(slots)
-        elif intent == "deepsearch":
-            response = self._handle_deep_search(slots)
+        # if intent == "查询天气":
+        #     response = self._handle_weather_query(slots)
+        # elif intent == "查询股票":
+        #     response = self._handle_stock_query(slots)
+        # elif intent == "查询基金":
+        #     response = self._handle_fund_query(slots)
+        # elif intent == "search":
+        response = self._handle_deep_search(user_input)
         
         # 如果工具调用成功，直接返回结果
         if response:
@@ -226,7 +230,7 @@ class Chatbot:
         
         return "\n".join(fund_info)
 
-    def _handle_deep_search(self, slots: dict) -> str:
+    def _handle_deep_search(self, user_input: str) -> str:
         """
         处理深度搜索意图
         
@@ -236,17 +240,9 @@ class Chatbot:
         Returns:
             str: 搜索结果
         """
-        query = slots.get("query")
-        if not query:
-            return "请告诉我您想搜索什么。"
+    
             
-        search_tool = self.tool_manager.get_tool("search")
-        result = search_tool.search(query)
-        
-        if "error" in result:
-            return f"搜索失败：{result['message']}"
-            
-        return result.get("result", "未找到相关信息。")
+        return self.react_agent.run(user_input)
     
     def clear_context(self):
         """

@@ -115,6 +115,10 @@ class IntentRecognizer:
                 result['slots'] = {}
             if 'confidence' not in result:
                 result['confidence'] = 0.5
+
+            # 如果意图是 deepsearch，则将用户输入作为 query 槽位
+            if result['intent'] == "deepsearch":
+                result['slots']['query'] = user_input
                 
             return result
         except Exception as e:

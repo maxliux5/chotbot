@@ -52,7 +52,7 @@
             ]
         },
         {
-            "name": "deepsearch",
+            "name": "search",
             "examples": [
                 "今天星期几？",
                 "帮我查一下最近的电影",
