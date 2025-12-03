@@ -28,7 +28,8 @@ if [ ! -d ".venv" ]; then
     uv venv
 fi
 source ".venv/bin/activate"
-uv run uvicorn backend.main:app --host 0.0.0.0 --port $BACKEND_PORT --log-level info &
+# 使用虚拟环境的 Python 直接运行，而不是 uv run
+.venv/bin/python -m uvicorn backend.main:app --host 0.0.0.0 --port $BACKEND_PORT --log-level info &
 BACKEND_PID=$!
 
 # 验证后端

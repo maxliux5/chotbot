@@ -1,4 +1,7 @@
-from duckduckgo_search import DDGS
+from ddgs import DDGS
+import logging
+
+logger = logging.getLogger(__name__)
 
 class SearchTool:
     """
@@ -16,9 +19,15 @@ class SearchTool:
         Returns:
             dict: A dictionary containing the search results or an error message.
         """
+        logger.info(f"Performing search for: '{query}'")
         try:
-            with DDGS() as ddgs:
-                results = [r for r in ddgs.text(query, max_results=max_results)]
+            with DDGS(timeout=20) as ddgs:
+                results = list(ddgs.text(
+                    query,
+                    max_results=max_results
+                ))
+            logger.info(f"Found {len(results)} results.")
             return {"result": results}
         except Exception as e:
+            logger.error(f"Search failed for query '{query}': {e}", exc_info=True)
             return {"error": "Search failed", "message": str(e)}
