@@ -121,16 +121,16 @@ async def chat_react_stream(request: ChatRequest):
                 # 使用 ReAct Agent 的流式方法
                 for step_data in chatbot.react_agent.run_stream(request.message):
                     # 发送每个步骤的数据
-                    yield json.dumps(step_data, ensure_ascii=False) + "\n"
+                    yield f"data: {json.dumps(step_data, ensure_ascii=False)}\n\n"
                     logger.info(f"发送步骤数据: {step_data['type']}")
             except Exception as e:
                 logger.error(f"流式生成失败: {str(e)}")
-                yield json.dumps({"type": "error", "content": f"处理失败: {str(e)}"}) + "\n"
+                yield f"data: {json.dumps({'type': 'error', 'content': f'处理失败: {str(e)}'})}\n\n"
         
-        return StreamingResponse(generate(), media_type="application/x-ndjson")
+        return StreamingResponse(generate(), media_type="text/event-stream")
     except Exception as e:
         logger.error(f"ReAct 流式聊天处理失败: {str(e)}")
         logger.error(traceback.format_exc())
         async def error_generate():
-            yield json.dumps({"type": "error", "content": f"错误：{str(e)}"}) + "\n"
-        return StreamingResponse(error_generate(), media_type="application/x-ndjson")
+            yield f"data: {json.dumps({'type': 'error', 'content': f'错误：{str(e)}'})}\n\n"
+        return StreamingResponse(error_generate(), media_type="text/event-stream")

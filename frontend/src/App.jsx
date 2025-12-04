@@ -113,11 +113,18 @@ function App() {
 
               if (data.type === 'thought') {
                 // 初始思考
-                currentSteps.push({
-                  step: 0,
-                  type: 'thought',
-                  content: data.content
-                });
+                const existingThoughtIndex = currentSteps.findIndex(step => step.type === 'thought');
+                if (existingThoughtIndex !== -1) {
+                  // 更新现有思考
+                  currentSteps[existingThoughtIndex].content = data.content;
+                } else {
+                  // 添加新的思考
+                  currentSteps.push({
+                    step: 0,
+                    type: 'thought',
+                    content: data.content
+                  });
+                }
                 setCurrentThinkingSteps([...currentSteps]);
               } else if (data.type === 'step') {
                 let observationText = data.observation;
