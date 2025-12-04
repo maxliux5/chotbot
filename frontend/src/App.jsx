@@ -6,6 +6,7 @@ function App() {
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [thinkingSteps, setThinkingSteps] = useState([]);
+  const [showThinking, setShowThinking] = useState(false); // 控制是否显示思考过程
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -14,7 +15,7 @@ function App() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, thinkingSteps]);
+  }, [messages, thinkingSteps, showThinking]);
 
   const handleSend = async () => {
     if (!inputValue.trim() || isLoading) return;
@@ -27,6 +28,7 @@ function App() {
     setInputValue('');
     setIsLoading(true);
     setThinkingSteps([]); // 清空之前的思考步骤
+    setShowThinking(false); // 隐藏思考过程
 
     try {
       console.log('正在发送请求到后端...');
@@ -53,6 +55,7 @@ function App() {
       const decoder = new TextDecoder();
       let assistantMessage = { role: 'assistant', content: '' };
       let currentSteps = [];
+      let hasFinalAnswer = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -74,6 +77,7 @@ function App() {
                 content: data.content
               });
               setThinkingSteps([...currentSteps]);
+              setShowThinking(true); // 显示思考过程
             } else if (data.type === 'step') {
               // 步骤更新
               currentSteps.push({
@@ -87,6 +91,7 @@ function App() {
             } else if (data.type === 'final_answer') {
               // 最终答案
               assistantMessage.content = data.content;
+              hasFinalAnswer = true;
               
               // 添加最终答案到思考步骤
               currentSteps.push({
@@ -109,6 +114,12 @@ function App() {
         }
       }
 
+      // 如果有最终答案，保持思考过程可见但可折叠
+      if (hasFinalAnswer) {
+        setIsLoading(false);
+        // 不自动隐藏思考过程，让用户可以手动折叠
+      }
+
     } catch (error) {
       console.error('=== 前端错误 ===');
       console.error('错误详情:', error);
@@ -124,11 +135,14 @@ function App() {
 - 检查后端日志文件 backend.log` 
       };
       setMessages(prev => [...prev, errorMessage]);
+      setShowThinking(false); // 隐藏思考过程
     } finally {
       setIsLoading(false);
-      // 清空思考步骤（可选，根据需求决定）
-      setTimeout(() => setThinkingSteps([]), 5000);
     }
+  };
+
+  const toggleThinking = () => {
+    setShowThinking(!showThinking);
   };
 
   const handleKeyPress = (e) => {
@@ -150,41 +164,48 @@ function App() {
           
           {/* 思考过程展示 */}
           {thinkingSteps.length > 0 && (
-            <div className="message assistant thinking">
+            <div className={`message assistant thinking ${showThinking ? '' : 'collapsed'}`}>
               <div className="message-content">
-                <div className="thinking-header">🤔 思考过程:</div>
-                {thinkingSteps.map((step, index) => (
-                  <div key={index} className="thinking-step">
-                    {step.type === 'thought' && (
-                      <div className="thought">
-                        <strong>初始思考:</strong>
-                        <div className="thought-content">{step.content}</div>
-                      </div>
-                    )}
-                    {step.type === 'action' && (
-                      <div className="action">
-                        <strong>步骤 {step.step}:</strong>
-                        <div className="action-content">
-                          <div className="sub-thought">
-                            <strong>💭 思考:</strong> {step.thought}
+                <div className="thinking-header" onClick={toggleThinking}>
+                  🤔 思考过程
+                  <span className="toggle-icon">{showThinking ? '▼' : '▶'}</span>
+                </div>
+                {showThinking && (
+                  <>
+                    {thinkingSteps.map((step, index) => (
+                      <div key={index} className="thinking-step">
+                        {step.type === 'thought' && (
+                          <div className="thought">
+                            <strong>初始思考:</strong>
+                            <div className="thought-content">{step.content}</div>
                           </div>
-                          <div className="action-detail">
-                            <strong>🎯 行动:</strong> <code>{step.action}</code>
+                        )}
+                        {step.type === 'action' && (
+                          <div className="action">
+                            <strong>步骤 {step.step}:</strong>
+                            <div className="action-content">
+                              <div className="sub-thought">
+                                <strong>💭 思考:</strong> {step.thought}
+                              </div>
+                              <div className="action-detail">
+                                <strong>🎯 行动:</strong> <code>{step.action}</code>
+                              </div>
+                              <div className="observation">
+                                <strong>👁️ 观察:</strong> {step.observation}
+                              </div>
+                            </div>
                           </div>
-                          <div className="observation">
-                            <strong>👁️ 观察:</strong> {step.observation}
+                        )}
+                        {step.type === 'final_answer' && (
+                          <div className="final-answer">
+                            <strong>✅ 最终答案:</strong>
+                            <div className="final-answer-content">{step.content}</div>
                           </div>
-                        </div>
+                        )}
                       </div>
-                    )}
-                    {step.type === 'final_answer' && (
-                      <div className="final-answer">
-                        <strong>✅ 最终答案:</strong>
-                        <div className="final-answer-content">{step.content}</div>
-                      </div>
-                    )}
-                  </div>
-                ))}
+                    ))}
+                  </>
+                )}
               </div>
             </div>
           )}
