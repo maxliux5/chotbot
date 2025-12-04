@@ -1,4 +1,5 @@
 import logging
+from math import log
 import re
 import json
 from typing import Iterator, Dict, Any
@@ -57,8 +58,18 @@ Action: """
                 # 如果有引用信息，将其添加到最终答案中
                 if all_citations:
                     final_answer += "\n\n### 引用来源：\n"
-                    for i, citation in enumerate(all_citations, 1):
-                        final_answer += f"{i}. [{citation['title']}]({citation['href']})\n"
+                    unique_citations = []
+                    seen_hrefs = set()
+                    for citation in all_citations:
+                        if citation['href'] not in seen_hrefs:
+                            seen_hrefs.add(citation['href'])
+                            unique_citations.append(citation)
+                    
+                    for i, citation in enumerate(unique_citations, 1):
+                        final_answer += f"{i}. [{citation['title']}]({citation['href']})"
+                        if 'source' in citation:
+                            final_answer += f" - {citation['source']}"
+                        final_answer += "\n"
                 
                 logger.info(f"Final Answer: {final_answer}")
                 
@@ -85,6 +96,7 @@ Action: """
                     obs_data = json.loads(observation)
                     if isinstance(obs_data, dict) and 'citations' in obs_data:
                         step_citations = obs_data['citations']
+                        logger.info(f"Extracted citations: {step_citations}")
                         all_citations.extend(step_citations)
             except:
                 # 如果解析失败，忽略
@@ -175,8 +187,18 @@ Action: """
                 # 如果有引用信息，将其添加到最终答案中
                 if all_citations:
                     final_answer += "\n\n### 引用来源：\n"
-                    for i, citation in enumerate(all_citations, 1):
-                        final_answer += f"{i}. [{citation['title']}]({citation['href']})\n"
+                    unique_citations = []
+                    seen_hrefs = set()
+                    for citation in all_citations:
+                        if citation['href'] not in seen_hrefs:
+                            seen_hrefs.add(citation['href'])
+                            unique_citations.append(citation)
+                    
+                    for i, citation in enumerate(unique_citations, 1):
+                        final_answer += f"{i}. [{citation['title']}]({citation['href']})"
+                        if 'source' in citation:
+                            final_answer += f" - {citation['source']}"
+                        final_answer += "\n"
                 
                 logger.info(f"Final Answer: {final_answer}")
                 
