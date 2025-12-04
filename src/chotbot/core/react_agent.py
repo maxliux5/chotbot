@@ -16,7 +16,7 @@ class ReActAgent:
 
     def run(self, user_input: str, max_steps: int = 100) -> tuple[str, list]:
         """
-        Run the ReAct agent and return the final answer and thinking steps.
+        Run the ReAct agent with Tool Calls and return the final answer and thinking steps.
         
         Returns:
             tuple: (final_answer, thinking_steps)
@@ -24,40 +24,101 @@ class ReActAgent:
             - thinking_steps: List of dictionaries containing the thinking process
         """
         # 1. 初始化思考过程和历史记录
-        thought = (
-            f"I need to answer the following question: {user_input}. "
-            f"I should use the tools available to find the answer. "
-            f"The available tools are: {self.tool_manager.get_tool_list()}. "
-            f"I will start by thinking about which tool to use."
-        )
-        history = []
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant. Use the provided tools to answer the user's question. When you have the final answer, use the end_tool to complete the task."},
+            {"role": "user", "content": user_input}
+        ]
+        
         thinking_steps = []
         all_citations = []  # 存储所有引用信息
-        logger.info(f"Initial thought: {thought}")
+        logger.info(f"Starting ReAct agent with user input: {user_input}")
 
         # 2. ReAct 循环
         for i in range(max_steps):
             logger.info(f"--- Step {i+1} ---")
 
-            # 3. 生成行动（Action）
-            prompt = f"""Thought: {thought}
-
-请按照以下要求执行：
-1. 尽可能使用提供的工具获取信息来回答问题
-2. 最终答案只需要返回核心内容，不需要包含引用来源
-3. 工具使用格式：[工具名[参数]]，例如 search[北京天气]
-
-Action: """
-            action = self.llm_client.generate([{"role": "user", "content": prompt}])
-            logger.info(f"Action: {action}")
-
-            # 4. 解析行动
-            tool_name, tool_input = self._parse_action(action)
+            # 3. 使用Tool Calls生成响应
+            tools = self.tool_manager.get_tool_definitions()
+            response, tool_calls = self.llm_client.generate_with_tools(messages, tools)
             
-            # 5. 检查是否得出最终答案
-            if not tool_name:
-                # 如果没有工具调用，直接将当前action作为最终答案
-                final_answer = action.split("Answer:")[-1].strip() if "Answer:" in action else action.strip()
+            logger.info(f"LLM response: {response}")
+            logger.info(f"Tool calls: {tool_calls}")
+
+            # 4. 检查是否有工具调用
+            if tool_calls:
+                for tool_call in tool_calls:
+                    # 执行工具调用
+                    tool_result = self.tool_manager.execute_tool_call(tool_call)
+                    logger.info(f"Tool result: {tool_result}")
+                    
+                    # 检查是否是end_tool（任务完成）
+                    if tool_result.get("tool") == "end_tool" and tool_result.get("status") == "completed":
+                        final_answer = tool_result["result"]
+                        
+                        # 如果有引用信息，将其添加到最终答案中
+                        if all_citations:
+                            final_answer += "\n\n### 引用来源：\n"
+                            unique_citations = []
+                            seen_hrefs = set()
+                            for citation in all_citations:
+                                if citation['href'] not in seen_hrefs:
+                                    seen_hrefs.add(citation['href'])
+                                    unique_citations.append(citation)
+                            
+                            for i, citation in enumerate(unique_citations, 1):
+                                final_answer += f"{i}. [{citation['title']}]({citation['href']})"
+                                if 'source' in citation:
+                                    final_answer += f" - {citation['source']}"
+                                final_answer += "\n"
+                        
+                        logger.info(f"Final Answer: {final_answer}")
+                        
+                        # 添加最终答案到思考步骤
+                        thinking_steps.append({
+                            "step": len(thinking_steps) + 1,
+                            "type": "final_answer",
+                            "content": final_answer,
+                            "thought": "Final answer reached"
+                        })
+                        
+                        return final_answer, thinking_steps
+                    
+                    # 如果是search工具，提取引用信息
+                    if tool_result.get("tool") == "search" and tool_result.get("status") == "success":
+                        result_data = tool_result.get("result", {})
+                        if isinstance(result_data, dict) and 'citations' in result_data:
+                            all_citations.extend(result_data['citations'])
+                    
+                    # 添加工具调用到思考步骤
+                    # 处理tool_call对象，提取工具名和参数
+                    if hasattr(tool_call, 'function'):
+                        tool_name = tool_call.function.name
+                        arguments = tool_call.function.arguments
+                    else:
+                        tool_name = tool_call["function"]["name"]
+                        arguments = tool_call["function"]["arguments"]
+                    
+                    thinking_steps.append({
+                        "step": len(thinking_steps) + 1,
+                        "type": "tool_call",
+                        "tool": tool_name,
+                        "arguments": arguments,
+                        "result": tool_result
+                    })
+                    
+                    # 将工具结果添加到消息历史
+                    messages.append({
+                        "role": "assistant",
+                        "tool_calls": [tool_call]
+                    })
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": str(tool_result)
+                    })
+            else:
+                # 没有工具调用，直接返回响应作为最终答案
+                final_answer = response if response else "No response generated."
                 
                 # 如果有引用信息，将其添加到最终答案中
                 if all_citations:
@@ -87,49 +148,6 @@ Action: """
                 
                 return final_answer, thinking_steps
 
-            # 5. 执行行动并获取观察结果
-            observation = self._execute_action(action)
-            logger.info(f"Observation: {observation}")
-
-            # 提取引用信息（如果有）
-            step_citations = []
-            try:
-                import json
-                # 尝试解析observation为JSON对象
-                if isinstance(observation, str) and (observation.startswith('{') or observation.startswith('[')):
-                    obs_data = json.loads(observation)
-                    if isinstance(obs_data, dict) and 'citations' in obs_data:
-                        step_citations = obs_data['citations']
-                        logger.info(f"Extracted citations: {step_citations}")
-                        all_citations.extend(step_citations)
-            except:
-                # 如果解析失败，忽略
-                pass
-
-            # 6. 更新历史和思考过程
-            history.append(f"Thought: {thought}")
-            history.append(f"Action: {action}")
-            history.append(f"Observation: {observation}")
-            
-            # 添加当前步骤到思考步骤列表
-            thinking_steps.append({
-                "step": len(thinking_steps) + 1,
-                "type": "action",
-                "thought": thought,
-                "action": action,
-                "observation": observation
-            })
-
-            history_str = "\n".join(history)
-            thought = (
-                f"""Based on the history, I need to decide the next step. 
-If I have the answer, I will output 'Final Answer:'. 
-Otherwise, I will choose another action.
-
-History:
-{history_str}"""
-            )
-
         # 7. 超出最大步数，返回错误信息
         logger.warning("Max steps reached, unable to find an answer.")
         error_message = "Sorry, I couldn't find an answer after several steps."
@@ -145,52 +163,97 @@ History:
 
     def run_stream(self, user_input: str, max_steps: int = 100) -> Iterator[Dict[str, Any]]:
         """
-        Stream the ReAct agent's thinking process.
+        Stream the ReAct agent's thinking process with Tool Calls.
         
         Yields:
             Dict[str, Any]: Each step of the thinking process
         """
-        # 1. 初始化思考过程和历史记录
-        thought = (
-            f"I need to answer the following question: {user_input}. "
-            f"I should use the tools available to find the answer. "
-            f"The available tools are: {self.tool_manager.get_tool_list()}. "
-            f"I will start by thinking about which tool to use."
-        )
-        history = []
+        # 1. 初始化消息历史
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant. Use the provided tools to answer the user's question. When you have the final answer, use the end_tool to complete the task."},
+            {"role": "user", "content": user_input}
+        ]
+        
         all_citations = []  # 存储所有引用信息
-        logger.info(f"Initial thought: {thought}")
-
-        # 发送初始思考
-        yield {
-            "type": "thought",
-            "step": 0,
-            "content": thought
-        }
+        logger.info(f"Starting ReAct agent with user input: {user_input}")
 
         # 2. ReAct 循环
         for i in range(max_steps):
             logger.info(f"--- Step {i+1} ---")
 
-            # 3. 生成行动（Action）
-            prompt = f"""Thought: {thought}
-
-请按照以下要求执行：
-1. 尽可能使用提供的工具获取信息来回答问题
-2. 最终答案中必须包含使用工具获取的引用来源
-3. 工具使用格式：[工具名[参数]]，例如 search[北京天气]
-
-Action: """
-            action = self.llm_client.generate([{"role": "user", "content": prompt}])
-            logger.info(f"Action: {action}")
-
-            # 4. 解析行动
-            tool_name, tool_input = self._parse_action(action)
+            # 3. 使用Tool Calls生成响应
+            tools = self.tool_manager.get_tool_definitions()
+            response, tool_calls = self.llm_client.generate_with_tools(messages, tools)
             
-            # 5. 检查是否得出最终答案
-            if "Final Answer:" in action or  not tool_name:
-                # 如果没有工具调用，直接将当前action作为最终答案
-                final_answer = action.replace("Final Answer:", "").strip()
+            logger.info(f"LLM response: {response}")
+            logger.info(f"Tool calls: {tool_calls}")
+
+            # 4. 检查是否有工具调用
+            if tool_calls:
+                for tool_call in tool_calls:
+                    # 执行工具调用
+                    tool_result = self.tool_manager.execute_tool_call(tool_call)
+                    logger.info(f"Tool result: {tool_result}")
+                    
+                    # 检查是否是end_tool（任务完成）
+                    if tool_result.get("tool") == "end_tool" and tool_result.get("status") == "completed":
+                        final_answer = tool_result["result"]
+                        
+                        # 如果有引用信息，将其添加到最终答案中
+                        if all_citations:
+                            final_answer += "\n\n### 引用来源：\n"
+                            unique_citations = []
+                            seen_hrefs = set()
+                            for citation in all_citations:
+                                if citation['href'] not in seen_hrefs:
+                                    seen_hrefs.add(citation['href'])
+                                    unique_citations.append(citation)
+                            
+                            for i, citation in enumerate(unique_citations, 1):
+                                final_answer += f"{i}. [{citation['title']}]({citation['href']})"
+                                if 'source' in citation:
+                                    final_answer += f" - {citation['source']}"
+                                final_answer += "\n"
+                        
+                        logger.info(f"Final Answer: {final_answer}")
+                        
+                        # 发送最终答案
+                        yield {
+                            "type": "final_answer",
+                            "step": i + 1,
+                            "content": final_answer
+                        }
+                        
+                        return
+                    
+                    # 如果是search工具，提取引用信息
+                    if tool_result.get("tool") == "search" and tool_result.get("status") == "success":
+                        result_data = tool_result.get("result", {})
+                        if isinstance(result_data, dict) and 'citations' in result_data:
+                            all_citations.extend(result_data['citations'])
+                    
+                    # 发送工具调用步骤
+                    yield {
+                        "type": "tool_call",
+                        "step": i + 1,
+                        "tool": tool_call["function"]["name"],
+                        "arguments": tool_call["function"]["arguments"],
+                        "result": tool_result
+                    }
+                    
+                    # 将工具结果添加到消息历史
+                    messages.append({
+                        "role": "assistant",
+                        "tool_calls": [tool_call]
+                    })
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": str(tool_result)
+                    })
+            else:
+                # 没有工具调用，直接返回响应作为最终答案
+                final_answer = response if response else "No response generated."
                 
                 # 如果有引用信息，将其添加到最终答案中
                 if all_citations:
@@ -219,49 +282,7 @@ Action: """
                 
                 return
 
-            # 5. 执行行动并获取观察结果
-            observation = self._execute_action(action)
-            logger.info(f"Observation: {observation}")
-
-            # 提取引用信息（如果有）
-            step_citations = []
-            try:
-                import json
-                # 尝试解析observation为JSON对象
-                if isinstance(observation, str) and (observation.startswith('{') or observation.startswith('[')):
-                    obs_data = json.loads(observation)
-                    if isinstance(obs_data, dict) and 'citations' in obs_data:
-                        step_citations = obs_data['citations']
-                        all_citations.extend(step_citations)
-            except:
-                # 如果解析失败，忽略
-                pass
-
-            # 6. 发送当前步骤的思考过程
-            yield {
-                "type": "step",
-                "step": i + 1,
-                "thought": thought,
-                "action": action,
-                "observation": observation
-            }
-
-            # 7. 更新历史和思考过程
-            history.append(f"Thought: {thought}")
-            history.append(f"Action: {action}")
-            history.append(f"Observation: {observation}")
-
-            history_str = "\n".join(history)
-            thought = (
-                f"""Based on the history, I need to decide the next step. 
-If I have the answer, I will output 'Final Answer:'. 
-Otherwise, I will choose another action.
-
-History:
-{history_str}"""
-            )
-
-        # 8. 超出最大步数，发送错误信息
+        # 5. 超出最大步数，发送错误信息
         logger.warning("Max steps reached, unable to find an answer.")
         yield {
             "type": "error",
@@ -270,46 +291,6 @@ History:
         }
 
     def _execute_action(self, action: str) -> str:
-        tool_name, tool_input = self._parse_action(action)
-        if not tool_name or not tool_input:
-            logger.warning(f"Invalid action: {action}")
-            return "Invalid action. Please try again."
-
-        tool = self.tool_manager.get_tool(tool_name)
-        if not tool:
-            logger.error(f"Tool '{tool_name}' not found.")
-            return f"Tool '{tool_name}' not found."
-
-        try:
-            result = tool.run(tool_input)
-            return str(result)
-        except Exception as e:
-            logger.error(f"Error executing tool: {e}")
-            return f"Error executing tool: {e}"
-
-    def _parse_action(self, action: str) -> tuple[str, str] | tuple[None, None]:
-        # 首先找到最后一行包含Action:的行
-        lines = action.split('\n')
-        action_line = None
-        for line in reversed(lines):
-            if 'Action:' in line:
-                action_line = line
-                break
-        
-        if not action_line:
-            # 如果没有找到Action:行，尝试在整个字符串中搜索工具调用格式
-            match = re.search(r'(\w+)\[(.*?)\]', action, re.DOTALL)
-            if not match:
-                return None, None
-            tool_name = match.group(1).strip()
-            tool_input = match.group(2).strip()
-            return tool_name, tool_input
-        
-        # 从Action:行中提取工具调用
-        match = re.search(r'(\w+)\[(.*?)\]', action_line)
-        if not match:
-            return None, None
-            
-        tool_name = match.group(1).strip()
-        tool_input = match.group(2).strip()
-        return tool_name, tool_input
+        """Legacy method - no longer used with Tool Calls"""
+        logger.warning("_execute_action is deprecated. Use Tool Calls instead.")
+        return "Deprecated method"

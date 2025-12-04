@@ -51,6 +51,55 @@ class ToolManager:
         
         return tool_list
     
+    def get_tool_definitions(self) -> List[Dict[str, Any]]:
+        """
+        获取工具定义，用于OpenAI Function Calling
+        
+        Returns:
+            List[Dict[str, Any]]: OpenAI函数定义列表
+        """
+        definitions = []
+        
+        # search工具
+        definitions.append({
+            "type": "function",
+            "function": {
+                "name": "search",
+                "description": "Search for information on the internet",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "The search query"
+                        }
+                    },
+                    "required": ["query"]
+                }
+            }
+        })
+        
+        # end_tool - 用于表示任务完成
+        definitions.append({
+            "type": "function",
+            "function": {
+                "name": "end_tool",
+                "description": "Call this tool when you have completed the task and have the final answer",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "final_answer": {
+                            "type": "string",
+                            "description": "The final answer to the user's question"
+                        }
+                    },
+                    "required": ["final_answer"]
+                }
+            }
+        })
+        
+        return definitions
+    
     def get_tool(self, tool_name: str):
         """
         根据工具名称获取工具实例
@@ -89,3 +138,52 @@ class ToolManager:
             return result
         except Exception as e:
             return {"error": f"工具调用失败: {str(e)}", "message": "请检查参数是否正确"}
+    
+    def execute_tool_call(self, tool_call) -> Dict[str, Any]:
+        """
+        执行工具调用（OpenAI Function Calling格式）
+        
+        Args:
+            tool_call: 工具调用信息（ChatCompletionMessageFunctionToolCall对象）
+            
+        Returns:
+            工具执行结果
+        """
+        # ChatCompletionMessageFunctionToolCall对象有function属性
+        tool_name = tool_call.function.name
+        arguments = json.loads(tool_call.function.arguments)
+        tool_call_id = tool_call.id
+        
+        if tool_name == "end_tool":
+            # end_tool是特殊的完成工具
+            return {
+                "tool": "end_tool",
+                "result": arguments["final_answer"],
+                "status": "completed",
+                "tool_call_id": tool_call_id
+            }
+        elif tool_name == "search":
+            # 执行search工具
+            tool = self.get_tool("search")
+            if tool:
+                result = tool.run(arguments["query"])
+                return {
+                    "tool": "search",
+                    "result": result,
+                    "status": "success",
+                    "tool_call_id": tool_call_id
+                }
+            else:
+                return {
+                    "tool": "search",
+                    "error": "Tool not found",
+                    "status": "error",
+                    "tool_call_id": tool_call_id
+                }
+        else:
+            return {
+                "tool": tool_name,
+                "error": f"Unknown tool: {tool_name}",
+                "status": "error",
+                "tool_call_id": tool_call_id
+            }
