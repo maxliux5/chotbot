@@ -141,3 +141,112 @@ body {
     max-width: 85%;
   }
 }
+
+/* 思考过程样式 */
+.message.thinking {
+  background-color: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 12px;
+  margin: 8px 0;
+}
+
+.thinking-header {
+  font-size: 14px;
+  font-weight: bold;
+  color: #6c757d;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.thinking-step {
+  margin-bottom: 16px;
+  padding: 12px;
+  background-color: white;
+  border-radius: 8px;
+  border-left: 4px solid #007bff;
+}
+
+.thought {
+  margin-bottom: 12px;
+}
+
+.thought-content {
+  margin-top: 8px;
+  padding: 8px;
+  background-color: #f8f9fa;
+  border-radius: 6px;
+  font-size: 14px;
+  color: #495057;
+}
+
+.action {
+  margin-bottom: 12px;
+}
+
+.action-content {
+  margin-top: 8px;
+}
+
+.sub-thought {
+  margin-bottom: 8px;
+  padding: 8px;
+  background-color: #fff3cd;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.action-detail {
+  margin-bottom: 8px;
+  padding: 8px;
+  background-color: #d1ecf1;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.action-detail code {
+  background-color: rgba(0, 0, 0, 0.05);
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-family: 'Courier New', monospace;
+}
+
+.observation {
+  padding: 8px;
+  background-color: #d4edda;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.final-answer {
+  margin-top: 16px;
+  padding: 12px;
+  background-color: #c3e6cb;
+  border-radius: 8px;
+  border-left: 4px solid #28a745;
+}
+
+.final-answer-content {
+  margin-top: 8px;
+  font-size: 16px;
+  font-weight: 500;
+  color: #155724;
+}
+
+/* 响应式调整 */
+@media (max-width: 600px) {
+  .thinking-step {
+    padding: 8px;
+    margin-bottom: 12px;
+  }
+  
+  .sub-thought,
+  .action-detail,
+  .observation {
+    font-size: 13px;
+  }
+  
+  .final-answer-content {
+    font-size: 15px;
+  }
+}

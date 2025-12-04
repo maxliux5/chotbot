@@ -23,6 +23,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from chotbot.core.chatbot import Chatbot
+from fastapi.responses import StreamingResponse
+import json
 
 app = FastAPI(title="Chotbot API", version="1.0.0")
 
@@ -82,7 +84,6 @@ async def chat_stream(request: ChatRequest):
     
     if not chatbot:
         logger.error("Chatbot 未初始化")
-        from fastapi.responses import StreamingResponse
         return StreamingResponse("抱歉，聊天机器人服务暂时不可用", media_type="text/plain")
     
     try:
@@ -95,10 +96,41 @@ async def chat_stream(request: ChatRequest):
         async def generate():
             yield response
         
-        from fastapi.responses import StreamingResponse
         return StreamingResponse(generate(), media_type="text/plain")
     except Exception as e:
         logger.error(f"流式聊天处理失败: {str(e)}")
         logger.error(traceback.format_exc())
-        from fastapi.responses import StreamingResponse
         return StreamingResponse(f"错误：{str(e)}", media_type="text/plain")
+
+@app.post("/api/chat/react-stream")
+async def chat_react_stream(request: ChatRequest):
+    """ReAct Agent 流式接口 - 实时展示思考过程"""
+    logger.info(f"收到 ReAct 流式聊天请求: {request.message}")
+    
+    if not chatbot:
+        logger.error("Chatbot 未初始化")
+        async def error_generate():
+            yield json.dumps({"type": "error", "content": "聊天机器人服务暂时不可用"}) + "\n"
+        return StreamingResponse(error_generate(), media_type="application/x-ndjson")
+    
+    try:
+        logger.info("开始调用 ReAct Agent 流式处理...")
+        
+        async def generate():
+            try:
+                # 使用 ReAct Agent 的流式方法
+                for step_data in chatbot.react_agent.run_stream(request.message):
+                    # 发送每个步骤的数据
+                    yield json.dumps(step_data, ensure_ascii=False) + "\n"
+                    logger.info(f"发送步骤数据: {step_data['type']}")
+            except Exception as e:
+                logger.error(f"流式生成失败: {str(e)}")
+                yield json.dumps({"type": "error", "content": f"处理失败: {str(e)}"}) + "\n"
+        
+        return StreamingResponse(generate(), media_type="application/x-ndjson")
+    except Exception as e:
+        logger.error(f"ReAct 流式聊天处理失败: {str(e)}")
+        logger.error(traceback.format_exc())
+        async def error_generate():
+            yield json.dumps({"type": "error", "content": f"错误：{str(e)}"}) + "\n"
+        return StreamingResponse(error_generate(), media_type="application/x-ndjson")
