@@ -1,5 +1,45 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import './App.css';
+
+// Markdown 解析函数
+const parseMarkdown = (text) => {
+  if (!text) return '';
+  
+  let html = text
+    // 代码块 ```code```
+    .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
+    // 行内代码 `code`
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    // 粗体 **text**
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    // 斜体 *text*
+    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+    // 标题 ###
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+    // 链接 [text](url)
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
+    // 列表 - item
+    .replace(/^\* (.+)$/gm, '<li>$1</li>')
+    .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>')
+    // 换行
+    .replace(/\n/g, '<br>');
+  
+  return html;
+};
+
+// Markdown 渲染组件
+const MarkdownContent = ({ content }) => {
+  const htmlContent = useMemo(() => parseMarkdown(content), [content]);
+  
+  return (
+    <div 
+      className="markdown-content"
+      dangerouslySetInnerHTML={{ __html: htmlContent }}
+    />
+  );
+};
 
 function App() {
   const [messages, setMessages] = useState([]);
@@ -158,7 +198,9 @@ function App() {
         <div className="messages">
           {messages.map((msg, index) => (
             <div key={index} className={`message ${msg.role}`}>
-              <div className="message-content">{msg.content}</div>
+              <div className="message-content">
+                <MarkdownContent content={msg.content} />
+              </div>
             </div>
           ))}
           
