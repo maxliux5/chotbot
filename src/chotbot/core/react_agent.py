@@ -30,7 +30,6 @@ class ReActAgent:
         ]
         
         thinking_steps = []
-        all_citations = []  # 存储所有引用信息
         logger.info(f"Starting ReAct agent with user input: {user_input}")
 
         # 2. ReAct 循环
@@ -53,23 +52,14 @@ class ReActAgent:
                     
                     # 检查是否是end_tool（任务完成）
                     if tool_result.get("tool") == "end_tool" and tool_result.get("status") == "completed":
-                        final_answer = tool_result["result"]
+                        final_answer = tool_result.get("result", "")
+                        model_citations = tool_result.get("citations", [])
                         
-                        # 如果有引用信息，将其添加到最终答案中
-                        if all_citations:
+                        # 使用大模型自己提供的引用来源
+                        if model_citations:
                             final_answer += "\n\n### 引用来源：\n"
-                            unique_citations = []
-                            seen_hrefs = set()
-                            for citation in all_citations:
-                                if citation['href'] not in seen_hrefs:
-                                    seen_hrefs.add(citation['href'])
-                                    unique_citations.append(citation)
-                            
-                            for i, citation in enumerate(unique_citations, 1):
-                                final_answer += f"{i}. [{citation['title']}]({citation['href']})"
-                                if 'source' in citation:
-                                    final_answer += f" - {citation['source']}"
-                                final_answer += "\n"
+                            for i, citation in enumerate(model_citations, 1):
+                                final_answer += f"{i}. [{citation.get('title', '')}]({citation.get('url', '')})\n"
                         
                         logger.info(f"Final Answer: {final_answer}")
                         
@@ -83,20 +73,12 @@ class ReActAgent:
                         
                         return final_answer, thinking_steps
                     
-                    # 如果是search工具，提取引用信息
-                    if tool_result.get("tool") == "search" and tool_result.get("status") == "success":
-                        result_data = tool_result.get("result", {})
-                        if isinstance(result_data, dict) and 'citations' in result_data:
-                            all_citations.extend(result_data['citations'])
                     
                     # 添加工具调用到思考步骤
                     # 处理tool_call对象，提取工具名和参数
-                    if hasattr(tool_call, 'function'):
-                        tool_name = tool_call.function.name
-                        arguments = tool_call.function.arguments
-                    else:
-                        tool_name = tool_call["function"]["name"]
-                        arguments = tool_call["function"]["arguments"]
+                    # ChatCompletionMessageFunctionToolCall对象有function属性
+                    tool_name = tool_call.function.name
+                    arguments = tool_call.function.arguments
                     
                     thinking_steps.append({
                         "step": len(thinking_steps) + 1,
@@ -116,25 +98,6 @@ class ReActAgent:
                         "tool_call_id": tool_call.id,
                         "content": str(tool_result)
                     })
-            else:
-                # 没有工具调用，直接返回响应作为最终答案
-                final_answer = response if response else "No response generated."
-                
-                # 如果有引用信息，将其添加到最终答案中
-                if all_citations:
-                    final_answer += "\n\n### 引用来源：\n"
-                    unique_citations = []
-                    seen_hrefs = set()
-                    for citation in all_citations:
-                        if citation['href'] not in seen_hrefs:
-                            seen_hrefs.add(citation['href'])
-                            unique_citations.append(citation)
-                    
-                    for i, citation in enumerate(unique_citations, 1):
-                        final_answer += f"{i}. [{citation['title']}]({citation['href']})"
-                        if 'source' in citation:
-                            final_answer += f" - {citation['source']}"
-                        final_answer += "\n"
                 
                 logger.info(f"Final Answer: {final_answer}")
                 
@@ -174,9 +137,8 @@ class ReActAgent:
             {"role": "user", "content": user_input}
         ]
         
-        all_citations = []  # 存储所有引用信息
         logger.info(f"Starting ReAct agent with user input: {user_input}")
-
+        final_answer = ""
         # 2. ReAct 循环
         for i in range(max_steps):
             logger.info(f"--- Step {i+1} ---")
@@ -197,23 +159,14 @@ class ReActAgent:
                     
                     # 检查是否是end_tool（任务完成）
                     if tool_result.get("tool") == "end_tool" and tool_result.get("status") == "completed":
-                        final_answer = tool_result["result"]
+                        final_answer = tool_result.get("result", "")
+                        model_citations = tool_result.get("citations", [])
                         
-                        # 如果有引用信息，将其添加到最终答案中
-                        if all_citations:
+                        # 使用大模型自己提供的引用来源
+                        if model_citations:
                             final_answer += "\n\n### 引用来源：\n"
-                            unique_citations = []
-                            seen_hrefs = set()
-                            for citation in all_citations:
-                                if citation['href'] not in seen_hrefs:
-                                    seen_hrefs.add(citation['href'])
-                                    unique_citations.append(citation)
-                            
-                            for i, citation in enumerate(unique_citations, 1):
-                                final_answer += f"{i}. [{citation['title']}]({citation['href']})"
-                                if 'source' in citation:
-                                    final_answer += f" - {citation['source']}"
-                                final_answer += "\n"
+                            for i, citation in enumerate(model_citations, 1):
+                                final_answer += f"{i}. [{citation.get('title', '')}]({citation.get('url', '')})\n"
                         
                         logger.info(f"Final Answer: {final_answer}")
                         
@@ -226,18 +179,13 @@ class ReActAgent:
                         
                         return
                     
-                    # 如果是search工具，提取引用信息
-                    if tool_result.get("tool") == "search" and tool_result.get("status") == "success":
-                        result_data = tool_result.get("result", {})
-                        if isinstance(result_data, dict) and 'citations' in result_data:
-                            all_citations.extend(result_data['citations'])
                     
                     # 发送工具调用步骤
                     yield {
                         "type": "tool_call",
                         "step": i + 1,
-                        "tool": tool_call["function"]["name"],
-                        "arguments": tool_call["function"]["arguments"],
+                        "tool": tool_call.function.name,
+                        "arguments": tool_call.function.arguments,
                         "result": tool_result
                     }
                     

@@ -3,6 +3,7 @@
 MCP 工具管理器
 """
 
+import json
 from typing import Dict, Any, List
 from chotbot.mcp.tools.weather import WeatherTool
 from chotbot.mcp.tools.fund import FundTool
@@ -84,13 +85,25 @@ class ToolManager:
             "type": "function",
             "function": {
                 "name": "end_tool",
-                "description": "Call this tool when you have completed the task and have the final answer",
+                "description": "任务完成时调用此工具，并提供最终答案和所有引用来源的URL。",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "final_answer": {
                             "type": "string",
-                            "description": "The final answer to the user's question"
+                            "description": "给用户的最终答案"
+                        },
+                        "citations": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "title": {"type": "string", "description": "引用来源的标题"},
+                                    "url": {"type": "string", "description": "引用来源的URL"}
+                                },
+                                "required": ["title", "url"]
+                            },
+                            "description": "回答问题时引用的所有URL列表"
                         }
                     },
                     "required": ["final_answer"]
@@ -158,7 +171,8 @@ class ToolManager:
             # end_tool是特殊的完成工具
             return {
                 "tool": "end_tool",
-                "result": arguments["final_answer"],
+                "result": arguments.get("final_answer", ""),
+                "citations": arguments.get("citations", []),
                 "status": "completed",
                 "tool_call_id": tool_call_id
             }
