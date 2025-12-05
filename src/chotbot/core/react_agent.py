@@ -1,4 +1,6 @@
 import logging
+import pandas as pd
+from datetime import datetime
 from math import log
 import re
 import json
@@ -10,11 +12,14 @@ from chotbot.mcp.tools.tool_manager import ToolManager
 logger = logging.getLogger(__name__)
 
 class ReActAgent:
-    def __init__(self, llm_client: LLMClient, tool_manager: ToolManager):
+    def __init__(self, llm_client: LLMClient, tool_manager: ToolManager, history_compressor: "HistoryCompressor" = None, rag_manager: "RAGManager" = None):
         self.llm_client = llm_client
         self.tool_manager = tool_manager
+        self.history_compressor = history_compressor
+        self.rag_manager = rag_manager
+        self.history = []
 
-    def run(self, user_input: str, max_steps: int = 100) -> tuple[str, list]:
+    def run(self, user_input: str, max_steps: int = 100, user_id: str = None) -> tuple[str, list]:
         """
         Run the ReAct agent with Tool Calls and return the final answer and thinking steps.
         
@@ -23,9 +28,16 @@ class ReActAgent:
             - final_answer: The final answer to the user's question
             - thinking_steps: List of dictionaries containing the thinking process
         """
+        # 0. 添加用户画像
+        profile_prompt = ""
+        if self.rag_manager and user_id:
+            profile = self.rag_manager.query(f"user_profile_{user_id}")
+            if profile:
+                profile_prompt = f"The user's profile is as follows: {profile}. Please refer to this information to provide a more personalized and accurate answer."
         # 1. 初始化思考过程和历史记录
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         messages = [
-            {"role": "system", "content": "You are a helpful assistant. Use the provided tools to answer the user's question. When you have the final answer, use the end_tool to complete the task."},
+            {"role": "system", "content": f"{profile_prompt}You are a helpful assistant. Current time is {current_time}. Use the provided tools to answer the user's question. When you have the final answer, use the end_tool to complete the task."},
             {"role": "user", "content": user_input}
         ]
         
@@ -71,6 +83,16 @@ class ReActAgent:
                             "thought": "Final answer reached"
                         })
                         
+                        # 保存聊天记录和用户画像
+                        self.history.append(messages)
+                        if user_id:
+                            with open(f"history/{user_id}_{pd.Timestamp.now().strftime('%Y%m%d%H%M%S')}.json", "w") as f:
+                                json.dump(self.history, f, indent=4)
+                        if self.history_compressor and len(self.history) % 5 == 0:
+                            user_profile = self.history_compressor.extract_user_profile(self.history)
+                            if user_profile and self.rag_manager:
+                                self.rag_manager.add_documents([f"user_profile_{user_id}: {json.dumps(user_profile)}"])
+
                         return final_answer, thinking_steps
                     
                     

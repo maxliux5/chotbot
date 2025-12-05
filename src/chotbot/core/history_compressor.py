@@ -239,6 +239,42 @@ Provide your analysis in a structured format:"""
         
         return compressed_chunks + recent_messages
 
+    def extract_user_profile(self, messages: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Extract user profile from conversation history.
+
+        Args:
+            messages: Conversation history
+
+        Returns:
+            A dictionary containing the user's profile
+        """
+        conversation_text = self._format_conversation(messages)
+
+        prompt = f"""
+        Based on the following conversation, please extract a user profile.
+        The profile should be in JSON format and include the following fields:
+        - basic_info: name, gender, age, location, occupation
+        - interests: hobbies, topics of interest
+        - behavior_patterns: communication style, preference for detail, decision-making habits
+        - potential_needs: potential needs or problems to be solved
+
+        Conversation:
+        {conversation_text}
+
+        Please provide the user profile in JSON format:
+        """
+
+        try:
+            profile_str = self.llm_client.generate([
+                {"role": "user", "content": prompt}
+            ])
+            # Ensure the output is a valid JSON
+            return json.loads(profile_str)
+        except Exception as e:
+            logger.error(f"Failed to extract user profile: {e}")
+            return {}
+
 
 class CompressedHistoryManager:
     """

@@ -4,6 +4,7 @@ from chotbot.mcp.processor import MCPProcessor
 from chotbot.intent.intent_recognizer import IntentRecognizer
 from chotbot.mcp.tools.tool_manager import ToolManager
 from chotbot.core.react_agent import ReActAgent
+from chotbot.core.history_compressor import HistoryCompressor
 
 class Chatbot:
     """
@@ -22,6 +23,9 @@ class Chatbot:
     
         # 初始化 ReAct 代理
         self.react_agent = ReActAgent(self.llm_client, self.tool_manager)
+        
+        # 初始化 HistoryCompressor
+        self.history_compressor = HistoryCompressor(self.llm_client)
     
     def add_documents(self, documents: list):
         """
@@ -32,7 +36,7 @@ class Chatbot:
         """
         self.rag_manager.add_documents(documents)
     
-    def chat(self, user_input: str, use_rag: bool = True, system_prompt: str = None) -> str:
+    def chat(self, user_input: str, use_rag: bool = True, system_prompt: str = None, user_id: str = None) -> str:
         """
         Process a user input and generate a response.
         
@@ -66,7 +70,7 @@ class Chatbot:
         # elif intent == "查询基金":
         #     response = self._handle_fund_query(slots)
         # elif intent == "search":
-        response = self._handle_deep_search(user_input)
+        response = self._handle_deep_search(user_input, user_id=user_id)
         
         # 如果工具调用成功，直接返回结果
         if response:
@@ -87,7 +91,7 @@ class Chatbot:
             # Use MCP for context-aware generation
             return self.mcp_processor.interact(user_input, system_prompt=system_prompt)
     
-    def chat_stream(self, user_input: str, use_rag: bool = True, system_prompt: str = None):
+    def chat_stream(self, user_input: str, use_rag: bool = True, system_prompt: str = None, user_id: str = None):
         """
         Process a user input and generate a streaming response.
         
@@ -230,7 +234,7 @@ class Chatbot:
         
         return "\n".join(fund_info)
 
-    def _handle_deep_search(self, user_input: str) -> str:
+    def _handle_deep_search(self, user_input: str, user_id: str = None) -> str:
         """
         处理深度搜索意图
         
@@ -241,7 +245,7 @@ class Chatbot:
             str: 搜索结果
         """
         # 运行 ReAct Agent 并获取思考步骤
-        final_answer, thinking_steps = self.react_agent.run(user_input)
+        final_answer, thinking_steps = self.react_agent.run(user_input, user_id=user_id)
         
         # 格式化思考过程为字符串
         if thinking_steps:
