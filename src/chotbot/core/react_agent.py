@@ -35,15 +35,24 @@ class ReActAgent:
             if profile:
                 profile_prompt = f"The user's profile is as follows: {profile}. Please refer to this information to provide a more personalized and accurate answer."
         # 1. 初始化思考过程和历史记录
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        current_time = datetime.now().strftime("%Y-%m-%d")
+        system_prompt_content = f"""You are a helpful assistant.
+
+**IMPORTANT INSTRUCTIONS:**
+1.  **The current date is {current_time}.** You MUST use this date for any calculations related to age or time. DO NOT use your internal knowledge about the date.
+2.  For questions about current facts or events (e.g., "who is the current president", "what is the latest news"), you MUST use the `search` tool to get real-time information. Your internal knowledge is outdated.
+3.  {profile_prompt}
+
+Use the provided tools to answer the user's question. When you have the final answer, use the `end_tool` to complete the task.
+"""
         messages = [
-            {"role": "system", "content": f"{profile_prompt}You are a helpful assistant. Current time is {current_time}. Use the provided tools to answer the user's question. When you have the final answer, use the end_tool to complete the task."},
+            {"role": "system", "content": system_prompt_content.strip()},
             {"role": "user", "content": user_input}
         ]
         
         thinking_steps = []
         logger.info(f"Starting ReAct agent with user input: {user_input}")
-
+        final_answer = ""
         # 2. ReAct 循环
         for i in range(max_steps):
             logger.info(f"--- Step {i+1} ---")
@@ -120,18 +129,36 @@ class ReActAgent:
                         "tool_call_id": tool_call.id,
                         "content": str(tool_result)
                     })
+            else:
+                # 没有工具调用，直接返回响应作为最终答案
+                final_answer = response if response else "No response generated."
+                
+                # 如果有引用信息，将其添加到最终答案中
+                if all_citations:
+                    final_answer += "\n\n### 引用来源：\n"
+                    unique_citations = []
+                    seen_hrefs = set()
+                    for citation in all_citations:
+                        if citation['href'] not in seen_hrefs:
+                            seen_hrefs.add(citation['href'])
+                            unique_citations.append(citation)
+                    
+                    for i, citation in enumerate(unique_citations, 1):
+                        final_answer += f"{i}. [{citation['title']}]({citation['href']})"
+                        if 'source' in citation:
+                            final_answer += f" - {citation['source']}"
+                        final_answer += "\n"
                 
                 logger.info(f"Final Answer: {final_answer}")
                 
-                # 添加最终答案到思考步骤
-                thinking_steps.append({
-                    "step": len(thinking_steps) + 1,
+                # 发送最终答案
+                yield {
                     "type": "final_answer",
-                    "content": final_answer,
-                    "thought": "Final answer reached"
-                })
+                    "step": i + 1,
+                    "content": final_answer
+                }
                 
-                return final_answer, thinking_steps
+                return
 
         # 7. 超出最大步数，返回错误信息
         logger.warning("Max steps reached, unable to find an answer.")
@@ -153,12 +180,31 @@ class ReActAgent:
         Yields:
             Dict[str, Any]: Each step of the thinking process
         """
+
+           # 0. 添加用户画像
+        profile_prompt = ""
+        if self.rag_manager:
+            profile = self.rag_manager.query(f"user_profile")
+            if profile:
+                profile_prompt = f"The user's profile is as follows: {profile}. Please refer to this information to provide a more personalized and accurate answer."
+        # 1. 初始化思考过程和历史记录
+        current_time = datetime.now().strftime("%Y-%m-%d")
+        system_prompt_content = f"""You are a helpful assistant.
+
+**IMPORTANT INSTRUCTIONS:**
+1.  **The current date is {current_time}.** You MUST use this date for any calculations related to age or time. DO NOT use your internal knowledge about the date.
+2.  For questions about current facts or events (e.g., "who is the current president", "what is the latest news"), you MUST use the `search` tool to get real-time information. Your internal knowledge is outdated.
+3.  {profile_prompt}
+
+Use the provided tools to answer the user's question. When you have the final answer, use the `end_tool` to complete the task.
+"""
         # 1. 初始化消息历史
         messages = [
-            {"role": "system", "content": "You are a helpful assistant. Use the provided tools to answer the user's question. When you have the final answer, use the end_tool to complete the task."},
+            {"role": "system", "content": system_prompt_content.strip()},
             {"role": "user", "content": user_input}
         ]
         
+        thinking_steps = []
         logger.info(f"Starting ReAct agent with user input: {user_input}")
         final_answer = ""
         # 2. ReAct 循环
@@ -202,13 +248,13 @@ class ReActAgent:
                         return
                     
                     
-                    # 发送工具调用步骤
+                    # 改造返回给前端的数据结构
                     yield {
-                        "type": "tool_call",
+                        "type": "step",
                         "step": i + 1,
-                        "tool": tool_call.function.name,
-                        "arguments": tool_call.function.arguments,
-                        "result": tool_result
+                        "thought": response,  # LLM的思考过程
+                        "action": f"{tool_call.function.name}({tool_call.function.arguments})",
+                        "observation": json.dumps(tool_result, ensure_ascii=False)
                     }
                     
                     # 将工具结果添加到消息历史

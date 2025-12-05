@@ -105,65 +105,78 @@ function App() {
         const lines = chunk.split('\n').filter(line => line.trim());
 
         for (const line of lines) {
-          try {
-            const data = JSON.parse(line);
-            console.log('收到步骤数据:', data);
+          if (line.startsWith('data: ')) {
+            try {
+              const jsonStr = line.substring(6);
+              const data = JSON.parse(jsonStr);
+              console.log('收到步骤数据:', data);
 
-            if (data.type === 'thought') {
-              // 初始思考
-              currentSteps.push({
-                step: 0,
-                type: 'thought',
-                content: data.content
-              });
-              setCurrentThinkingSteps([...currentSteps]);
-            } else if (data.type === 'step') {
-              // 步骤更新
-              currentSteps.push({
-                step: data.step,
-                type: 'action',
-                thought: data.thought,
-                action: data.action,
-                observation: data.observation
-              });
-              setCurrentThinkingSteps([...currentSteps]);
-            } else if (data.type === 'final_answer') {
-              // 最终答案
-              assistantMessage.content = data.content;
-              hasFinalAnswer = true;
-              
-              // 将当前对话轮次添加到会话列表中
-              setConversations(prev => [
-                ...prev,
-                {
-                  userMessage,
-                  thinkingSteps: [...currentSteps],
-                  assistantMessage,
-                  showThinking: true // 默认显示思考过程
+              if (data.type === 'thought') {
+                // 初始思考
+                currentSteps.push({
+                  step: 0,
+                  type: 'thought',
+                  content: data.content
+                });
+                setCurrentThinkingSteps([...currentSteps]);
+              } else if (data.type === 'step') {
+                let observationText = data.observation;
+                try {
+                  // 尝试将 observation 解析为 JSON 并格式化
+                  const obsJson = JSON.parse(data.observation);
+                  observationText = JSON.stringify(obsJson.result || obsJson, null, 2);
+                } catch (e) {
+                  // 如果不是合法的 JSON 字符串，则直接使用原始文本
+                  console.log("Observation is not a JSON string, using as is.");
                 }
-              ]);
-              
-              // 清空当前思考过程
-              setCurrentThinkingSteps([]);
-            } else if (data.type === 'error') {
-              // 错误处理
-              assistantMessage.content = `错误: ${data.content}`;
-              // 将当前对话轮次添加到会话列表中
-              setConversations(prev => [
-                ...prev,
-                {
-                  userMessage,
-                  thinkingSteps: [...currentSteps],
-                  assistantMessage,
-                  showThinking: true // 默认显示思考过程
-                }
-              ]);
-              
-              // 清空当前思考过程
-              setCurrentThinkingSteps([]);
+
+                // 步骤更新
+                currentSteps.push({
+                  step: data.step,
+                  type: 'action',
+                  thought: data.thought,
+                  action: data.action,
+                  observation: observationText, // 使用格式化后的文本
+                });
+                setCurrentThinkingSteps([...currentSteps]);
+              } else if (data.type === 'final_answer') {
+                // 最终答案
+                assistantMessage.content = data.content;
+                hasFinalAnswer = true;
+                
+                // 将当前对话轮次添加到会话列表中
+                setConversations(prev => [
+                  ...prev,
+                  {
+                    userMessage,
+                    thinkingSteps: [...currentSteps],
+                    assistantMessage,
+                    showThinking: true // 默认显示思考过程
+                  }
+                ]);
+                
+                // 清空当前思考过程
+                setCurrentThinkingSteps([]);
+              } else if (data.type === 'error') {
+                // 错误处理
+                assistantMessage.content = `错误: ${data.content}`;
+                // 将当前对话轮次添加到会话列表中
+                setConversations(prev => [
+                  ...prev,
+                  {
+                    userMessage,
+                    thinkingSteps: [...currentSteps],
+                    assistantMessage,
+                    showThinking: true // 默认显示思考过程
+                  }
+                ]);
+                
+                // 清空当前思考过程
+                setCurrentThinkingSteps([]);
+              }
+            } catch (e) {
+              console.error('解析步骤数据失败:', e, '原始数据:', line);
             }
-          } catch (e) {
-            console.error('解析步骤数据失败:', e, '原始数据:', line);
           }
         }
       }
@@ -254,7 +267,8 @@ function App() {
                                     <strong>🎯 行动:</strong> <code>{step.action}</code>
                                   </div>
                                   <div className="observation">
-                                    <strong>👁️ 观察:</strong> {step.observation}
+                                    <strong>👁️ 观察:</strong>
+                                    <pre><code>{step.observation}</code></pre>
                                   </div>
                                 </div>
                               </div>
@@ -304,7 +318,8 @@ function App() {
                               <strong>🎯 行动:</strong> <code>{step.action}</code>
                             </div>
                             <div className="observation">
-                              <strong>👁️ 观察:</strong> {step.observation}
+                              <strong>👁️ 观察:</strong>
+                              <pre><code>{step.observation}</code></pre>
                             </div>
                           </div>
                         </div>
