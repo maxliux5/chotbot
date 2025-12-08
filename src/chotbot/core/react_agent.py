@@ -45,16 +45,38 @@ class ReActAgent:
 
 Use the provided tools to answer the user's question. When you have the final answer, use the `end_tool` to complete the task.
 """
+        # 1. 生成计划
+        plan_prompt = f"""Please create a step-by-step plan to answer the following user query. The user query is: {user_input}"""
+        plan_messages = [
+            {"role": "system", "content": system_prompt_content.strip()},
+            {"role": "user", "content": plan_prompt}
+        ]
+        plan, _ = self.llm_client.generate_with_tools(plan_messages, [])
+        
+        yield {
+            "type": "plan",
+            "content": plan
+        }
+
+        # 2. 执行计划
         messages = [
             {"role": "system", "content": system_prompt_content.strip()},
             {"role": "user", "content": user_input}
         ]
-        
-        thinking_steps = []
-        logger.info(f"Starting ReAct agent with user input: {user_input}")
-        final_answer = ""
-        # 2. ReAct 循环
+
+        # 1. 初始化
+        self.history.clear()
+        self.history.append({"role": "user", "content": user_input})
+        messages.extend(self.history)
+
+        yield {
+            "type": "thought",
+            "step": 0,
+            "content": "我正在思考如何回答你的问题..."
+        }
+
         for i in range(max_steps):
+            # 2. 调用LLM
             logger.info(f"--- Step {i+1} ---")
 
             # 3. 使用Tool Calls生成响应
@@ -198,6 +220,20 @@ Use the provided tools to answer the user's question. When you have the final an
 
 Use the provided tools to answer the user's question. When you have the final answer, use the `end_tool` to complete the task.
 """
+        # 1. 生成计划
+        plan_prompt = f"""Please create a step-by-step plan to answer the following user query. The user query is: {user_input}"""
+        plan_messages = [
+            {"role": "system", "content": system_prompt_content.strip()},
+            {"role": "user", "content": plan_prompt}
+        ]
+        plan, _ = self.llm_client.generate_with_tools(plan_messages, [])
+        
+        yield {
+            "type": "plan",
+            "content": plan
+        }
+
+        # 2. 执行计划
         messages = [
             {"role": "system", "content": system_prompt_content.strip()},
             {"role": "user", "content": user_input}

@@ -49,6 +49,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   // 当前正在进行的对话的思考过程
   const [currentThinkingSteps, setCurrentThinkingSteps] = useState([]);
+  const [currentPlan, setCurrentPlan] = useState(null);
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -69,130 +70,104 @@ function App() {
     setInputValue('');
     setIsLoading(true);
     setCurrentThinkingSteps([]); // 清空当前思考过程
+    setCurrentPlan(null); // 清空当前计划
 
     try {
       console.log('正在发送请求到后端...');
       
-      // 使用 ReAct 流式接口
-      const response = await fetch('http://localhost:5001/api/chat/react-stream', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ message: userMessage.content }),
-      });
-
-      console.log('后端响应状态:', response.status);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('后端错误响应:', errorText);
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
-      }
-
-      // 处理流式响应
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
+      const eventSource = new EventSource(`http://localhost:5001/api/chat/react-stream?message=${encodeURIComponent(userMessage.content)}`);
+      
       let assistantMessage = { role: 'assistant', content: '' };
       let currentSteps = [];
       let hasFinalAnswer = false;
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      eventSource.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        console.log('收到步骤数据:', data);
 
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split('\n').filter(line => line.trim());
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const jsonStr = line.substring(6);
-              const data = JSON.parse(jsonStr);
-              console.log('收到步骤数据:', data);
-
-              if (data.type === 'thought') {
-                // 初始思考
-                const existingThoughtIndex = currentSteps.findIndex(step => step.type === 'thought');
-                if (existingThoughtIndex !== -1) {
-                  // 更新现有思考
-                  currentSteps[existingThoughtIndex].content = data.content;
-                } else {
-                  // 添加新的思考
-                  currentSteps.push({
-                    step: 0,
-                    type: 'thought',
-                    content: data.content
-                  });
-                }
-                setCurrentThinkingSteps([...currentSteps]);
-              } else if (data.type === 'step') {
-                let observationText = data.observation;
-                try {
-                  // 尝试将 observation 解析为 JSON 并格式化
-                  const obsJson = JSON.parse(data.observation);
-                  observationText = JSON.stringify(obsJson.result || obsJson, null, 2);
-                } catch (e) {
-                  // 如果不是合法的 JSON 字符串，则直接使用原始文本
-                  console.log("Observation is not a JSON string, using as is.");
-                }
-
-                // 步骤更新
-                currentSteps.push({
-                  step: data.step,
-                  type: 'action',
-                  thought: data.thought,
-                  action: data.action,
-                  observation: observationText, // 使用格式化后的文本
-                });
-                setCurrentThinkingSteps([...currentSteps]);
-              } else if (data.type === 'final_answer') {
-                // 最终答案
-                assistantMessage.content = data.content;
-                hasFinalAnswer = true;
-                
-                // 将当前对话轮次添加到会话列表中
-                setConversations(prev => [
-                  ...prev,
-                  {
-                    userMessage,
-                    thinkingSteps: [...currentSteps],
-                    assistantMessage,
-                    showThinking: true // 默认显示思考过程
-                  }
-                ]);
-                
-                // 清空当前思考过程
-                setCurrentThinkingSteps([]);
-              } else if (data.type === 'error') {
-                // 错误处理
-                assistantMessage.content = `错误: ${data.content}`;
-                // 将当前对话轮次添加到会话列表中
-                setConversations(prev => [
-                  ...prev,
-                  {
-                    userMessage,
-                    thinkingSteps: [...currentSteps],
-                    assistantMessage,
-                    showThinking: true // 默认显示思考过程
-                  }
-                ]);
-                
-                // 清空当前思考过程
-                setCurrentThinkingSteps([]);
-              }
-            } catch (e) {
-              console.error('解析步骤数据失败:', e, '原始数据:', line);
-            }
+        if (data.type === 'plan') {
+          setCurrentPlan(data.content);
+        } else if (data.type === 'thought') {
+          // 初始思考
+          const existingThoughtIndex = currentSteps.findIndex(step => step.type === 'thought');
+          if (existingThoughtIndex !== -1) {
+            // 更新现有思考
+            currentSteps[existingThoughtIndex].content = data.content;
+          } else {
+            // 添加新的思考
+            currentSteps.push({
+              step: 0,
+              type: 'thought',
+              content: data.content
+            });
           }
-        }
-      }
+          setCurrentThinkingSteps([...currentSteps]);
+        } else if (data.type === 'step') {
+          let observationText = data.observation;
+          try {
+            // 尝试将 observation 解析为 JSON 并格式化
+            const obsJson = JSON.parse(data.observation);
+            observationText = JSON.stringify(obsJson.result || obsJson, null, 2);
+          } catch (e) {
+            // 如果不是合法的 JSON 字符串，则直接使用原始文本
+            console.log("Observation is not a JSON string, using as is.");
+          }
 
-      // 如果有最终答案，保持思考过程可见但可折叠
-      if (hasFinalAnswer) {
+          // 步骤更新
+          currentSteps.push({
+            step: data.step,
+            type: 'action',
+            thought: data.thought,
+            action: data.action,
+            observation: observationText, // 使用格式化后的文本
+          });
+          setCurrentThinkingSteps([...currentSteps]);
+        } else if (data.type === 'final_answer') {
+          // 最终答案
+          assistantMessage.content = data.content;
+          hasFinalAnswer = true;
+          
+          // 将当前对话轮次添加到会话列表中
+          setConversations(prev => [
+            ...prev,
+            {
+              userMessage,
+              thinkingSteps: [...currentSteps],
+              assistantMessage,
+              showThinking: true // 默认显示思考过程
+            }
+          ]);
+          
+          // 清空当前思考过程
+          setCurrentThinkingSteps([]);
+          setIsLoading(false);
+          eventSource.close();
+        } else if (data.type === 'error') {
+          // 错误处理
+          assistantMessage.content = `错误: ${data.content}`;
+          // 将当前对话轮次添加到会话列表中
+          setConversations(prev => [
+            ...prev,
+            {
+              userMessage,
+              thinkingSteps: [...currentSteps],
+              assistantMessage,
+              showThinking: true // 默认显示思考过程
+            }
+          ]);
+          
+          // 清空当前思考过程
+          setCurrentThinkingSteps([]);
+          setIsLoading(false);
+          eventSource.close();
+        }
+      };
+
+      eventSource.onerror = (error) => {
+        console.error('EventSource 失败:', error);
+        eventSource.close();
         setIsLoading(false);
-        // 不自动隐藏思考过程，让用户可以手动折叠
-      }
+      };
 
     } catch (error) {
       console.error('=== 前端错误 ===');
@@ -298,6 +273,19 @@ function App() {
           ))}
           
           {/* 显示当前正在进行的对话的思考过程 */}
+          {isLoading && currentPlan && (
+            <div className="message assistant thinking">
+              <div className="message-content">
+                <div className="thinking-header">
+                  📝 计划
+                </div>
+                <div className="thought-content">
+                  <MarkdownContent content={currentPlan} />
+                </div>
+              </div>
+            </div>
+          )}
+
           {isLoading && currentThinkingSteps.length > 0 && (
             <div className={`message assistant thinking ${true ? '' : 'collapsed'}`}>
               <div className="message-content">
