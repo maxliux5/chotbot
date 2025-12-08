@@ -50,6 +50,7 @@ function App() {
   // 当前正在进行的对话的思考过程
   const [currentThinkingSteps, setCurrentThinkingSteps] = useState([]);
   const [currentPlan, setCurrentPlan] = useState(null);
+  const [clarification, setClarification] = useState(null);
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -67,15 +68,23 @@ function App() {
     console.log('用户输入:', inputValue.trim());
 
     const userMessage = { role: 'user', content: inputValue.trim() };
+    const newConversations = [...conversations, { userMessage, thinkingSteps: [], assistantMessage: { role: 'assistant', content: '' } }];
+    setConversations(newConversations);
     setInputValue('');
     setIsLoading(true);
     setCurrentThinkingSteps([]); // 清空当前思考过程
     setCurrentPlan(null); // 清空当前计划
+    setClarification(null); // 清空追问
 
     try {
       console.log('正在发送请求到后端...');
       
-      const eventSource = new EventSource(`http://localhost:5001/api/chat/react-stream?message=${encodeURIComponent(userMessage.content)}`);
+      const history = newConversations.flatMap(c => [
+        { role: 'user', content: c.userMessage.content },
+        { role: 'assistant', content: c.assistantMessage.content }
+      ]);
+
+      const eventSource = new EventSource(`http://localhost:5001/api/chat/react-stream?message=${encodeURIComponent(userMessage.content)}&history=${encodeURIComponent(JSON.stringify(history))}`);
       
       let assistantMessage = { role: 'assistant', content: '' };
       let currentSteps = [];
@@ -85,7 +94,11 @@ function App() {
         const data = JSON.parse(event.data);
         console.log('收到步骤数据:', data);
 
-        if (data.type === 'plan') {
+        if (data.type === 'clarification') {
+          setClarification(data.content);
+          setIsLoading(false);
+          eventSource.close();
+        } else if (data.type === 'plan') {
           setCurrentPlan(data.content);
         } else if (data.type === 'thought') {
           // 初始思考
@@ -281,6 +294,19 @@ function App() {
                 </div>
                 <div className="thought-content">
                   <MarkdownContent content={currentPlan} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {clarification && (
+            <div className="message assistant thinking">
+              <div className="message-content">
+                <div className="thinking-header">
+                  🤔 追问
+                </div>
+                <div className="thought-content">
+                  {clarification}
                 </div>
               </div>
             </div>

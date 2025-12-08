@@ -25,6 +25,7 @@ from pydantic import BaseModel
 from chotbot.core.chatbot import Chatbot
 from fastapi.responses import StreamingResponse
 import json
+from typing import List, Dict
 
 app = FastAPI(title="Chotbot API", version="1.0.0")
 
@@ -49,6 +50,7 @@ except Exception as e:
 
 class ChatRequest(BaseModel):
     message: str
+    history: List[Dict[str, str]] = []
 
 class ChatResponse(BaseModel):
     response: str
@@ -103,10 +105,15 @@ async def chat_stream(request: ChatRequest):
         return StreamingResponse(f"错误：{str(e)}", media_type="text/plain")
 
 @app.get("/api/chat/react-stream")
-async def chat_react_stream(message: str = Query(..., description="用户查询消息")):
+async def chat_react_stream(message: str = Query(..., description="用户查询消息"), history: str = Query("[]", description="聊天历史")):
     """ReAct Agent 流式接口 - 实时展示思考过程"""
     logger.info(f"收到 ReAct 流式聊天请求: {message}")
     
+    try:
+        history_list = json.loads(history)
+    except json.JSONDecodeError:
+        history_list = []
+
     if not chatbot:
         logger.error("Chatbot 未初始化")
         async def error_generate():
@@ -119,7 +126,7 @@ async def chat_react_stream(message: str = Query(..., description="用户查询�
         async def generate():
             try:
                 # 使用 ReAct Agent 的流式方法
-                for step_data in chatbot.react_agent.run_stream(message):
+                for step_data in chatbot.react_agent.run_stream(message, history=history_list):
                     # 发送每个步骤的数据
                     yield f"data: {json.dumps(step_data, ensure_ascii=False)}\n\n"
             except Exception as e:

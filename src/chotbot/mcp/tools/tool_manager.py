@@ -4,6 +4,7 @@ MCP 工具管理器
 """
 
 import json
+from math import e
 from typing import Dict, Any, List
 from chotbot.mcp.tools.weather import WeatherTool
 from chotbot.mcp.tools.fund import FundTool
@@ -110,6 +111,24 @@ class ToolManager:
                 }
             }
         })
+
+        definitions.append({
+            "type": "function",
+            "function": {
+                "name": "ask_clarification",
+                "description": "当用户查询模糊时，使用此工具向用户询问澄清问题。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "question": {
+                            "type": "string",
+                            "description": "用户需要澄清的问题"
+                        }
+                    },
+                    "required": ["question"]
+                }
+            }
+        })
         
         return definitions
     
@@ -194,6 +213,14 @@ class ToolManager:
                     "status": "error",
                     "tool_call_id": tool_call_id
                 }
+        elif tool_name == "ask_clarification":
+            # 执行ask_clarification工具
+            return {
+                "tool": "ask_clarification",
+                "result": arguments["question"],
+                "status": "success",
+                "tool_call_id": tool_call_id
+            }
         else:
             return {
                 "tool": tool_name,
@@ -201,3 +228,9 @@ class ToolManager:
                 "status": "error",
                 "tool_call_id": tool_call_id
             }
+
+
+# 新增一个用于追问的工具
+def ask_clarification(question: str) -> str:
+    """When the user's query is ambiguous, use this tool to ask for clarification."""
+    return question

@@ -8,6 +8,7 @@ from typing import Iterator, Dict, Any
 from chotbot.core.llm_client import LLMClient
 from chotbot.mcp.tools.tool_manager import ToolManager
 
+
 # 配置日志
 logger = logging.getLogger(__name__)
 
@@ -195,7 +196,7 @@ Use the provided tools to answer the user's question. When you have the final an
         
         return error_message, thinking_steps
 
-    def run_stream(self, user_input: str, max_steps: int = 100) -> Iterator[Dict[str, Any]]:
+    def run_stream(self, user_input: str, max_steps: int = 100, history: list = None) -> Iterator[Dict[str, Any]]:
         """
         Stream the ReAct agent's thinking process with Tool Calls.
         
@@ -216,17 +217,22 @@ Use the provided tools to answer the user's question. When you have the final an
 **IMPORTANT INSTRUCTIONS:**
 1.  **The current date is {current_time}.** You MUST use this date for any calculations related to age or time. DO NOT use your internal knowledge about the date.
 2.  For questions about current facts or events (e.g., "who is the current president", "what is the latest news"), you MUST use the `search` tool to get real-time information. Your internal knowledge is outdated.
+4. If the user's query is ambiguous, you MUST use the `ask_clarification` tool to ask for more details  (e.g. user ask "how the stock is it?" you may use ask_clarification to ask "which stock?").
 3.  {profile_prompt}
+
 
 Use the provided tools to answer the user's question. When you have the final answer, use the `end_tool` to complete the task.
 """
         # 1. 生成计划
+        # 检查是否需要追问
         plan_prompt = f"""Please create a step-by-step plan to answer the following user query. The user query is: {user_input}"""
         plan_messages = [
             {"role": "system", "content": system_prompt_content.strip()},
             {"role": "user", "content": plan_prompt}
         ]
-        plan, _ = self.llm_client.generate_with_tools(plan_messages, [])
+        tools = self.tool_manager.get_tool_definitions()
+        
+        plan, _ = self.llm_client.generate_with_tools(plan_messages, tools)
         
         yield {
             "type": "plan",
@@ -255,7 +261,8 @@ Use the provided tools to answer the user's question. When you have the final an
             logger.info(f"--- Step {i+1} ---")
 
             # 3. 使用Tool Calls生成响应
-            tools = self.tool_manager.get_tool_definitions()
+            logger.info(f"Tools: {tools}")
+            logger.info(f"Messages: {messages}")
             response, tool_calls = self.llm_client.generate_with_tools(messages, tools)
             
             logger.info(f"LLM response: {response}")
@@ -267,7 +274,21 @@ Use the provided tools to answer the user's question. When you have the final an
                     # 执行工具调用
                     tool_result = self.tool_manager.execute_tool_call(tool_call)
                     logger.info(f"Tool result: {tool_result}")
-                    
+                    if tool_result.get("tool") == "ask_clarification":
+                        # 检查是否是ask_clarification（需要追问）
+                        yield {
+                            "type": "clarification",
+                            "step": i + 1,
+                            "content": tool_result.get("result", ""),
+                            "all_citations":[],
+                        }
+                            # 发送最终答案
+                        yield {
+                            "type": "final_answer",
+                            "step": i + 1,
+                            "content": tool_result.get("result", ""),
+                        }
+                        return
                     # 检查是否是end_tool（任务完成）
                     if tool_result.get("tool") == "end_tool" and tool_result.get("status") == "completed":
                         final_answer = tool_result.get("result", "")
